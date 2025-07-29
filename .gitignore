@@ -1,6 +1,10 @@
 .venv
+refs/
+out/
 *.pdf
 *.csv
 
 *.ipynb_checkpoints
 __pycache__
+
+.DS_Store
