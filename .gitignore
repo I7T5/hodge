@@ -1,10 +1,12 @@
+# Python artifacts
 .venv
-refs/
+__pycache__
+*.ipynb_checkpoints
+
+# Output files
 out/
 *.pdf
 *.csv
 
-*.ipynb_checkpoints
-__pycache__
-
+# MacOS files
 .DS_Store

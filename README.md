@@ -1,6 +1,8 @@
 # HodgeRank in Python
 
-References: 
+## References
+
+(MAA style)
 
 [1] Sizemore, R. K. (2013) Hodgerank: Applying combinatorial Hodge theory to sports ranking. MA Thesis. Wake Forest University, Winston-Salem, NC. Available at: https://wakespace.lib.wfu.edu/bitstream/handle/10339/38577/Sizemore_wfu_0248M_10444.pdf
 
