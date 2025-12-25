@@ -4,7 +4,8 @@ import argparse
 import os
 import numpy as np
 from numpy.typing import NDArray
-# import pandas as pd
+import pandas as pd
+import matplotlib
 import matplotlib.pyplot as plt
 import networkx as nx
 
@@ -81,23 +82,18 @@ def main(args: argparse.Namespace) -> None:
     ranking = hodge.rank(output_dir=out_dir, offset=offset)
     print(f"Ranking: \n{ranking}\n")
 
-    if args.save_ranking:
-        ranking.to_csv(os.path.join(out_dir, 'ranking.csv'), index=False)
-        print(f"Ranking saved to {os.path.join(out_dir, 'ranking.csv')}")
+    ranking.to_csv(os.path.join(out_dir, 'ranking.csv'), index=False)
+    print(f"Ranking saved to {os.path.join(out_dir, 'ranking.csv')}\n")
 
     # Decomposition
     grad_comp, inconst_comp, cyclicity_ratio = hodge.decompose(output_dir=out_dir)
     print(f"Cyclicity Ratio: {cyclicity_ratio}\n")
 
-    grad_adj = grad_comp
-    inconst_adj = inconst_comp
-    print(inconst_adj)
-
     grad_filepath = os.path.join(out_dir, 'grad_graph.png')
     inconst_filepath = os.path.join(out_dir, 'inconsistent_graph.png')
 
-    draw_graph(grad_adj, teams, filepath=grad_filepath)
-    draw_graph(inconst_adj, teams, filepath=inconst_filepath)
+    draw_graph(grad_comp, teams, filepath=grad_filepath)
+    draw_graph(inconst_comp, teams, filepath=inconst_filepath)
 
     print(f"Directed graph of gradient component saved to {grad_filepath}.")
     print(f"Directed graph of inconsistent component saved to {inconst_filepath}.")
