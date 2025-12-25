@@ -6,6 +6,32 @@ import pandas as pd
 np.set_printoptions(precision=3, suppress=True)
 
 
+def y2adj(Y: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Helper function for converting pairwise comparison matrix Y to adjacency matrix.
+
+    Parameters
+    ----------
+    Y : NDArray[np.float64]
+        Pairwise comparison matrix (n x n)
+
+    Returns
+    -------
+    NDArray[np.float64]
+        Adjacency matrix (n x n)
+    """
+    n = Y.shape[0]
+    adj_matrix = np.zeros((n, n), dtype=np.float64)
+
+    # Only keep negative weights in the pairwise comparison matrix
+    for i in range(n):
+        for j in range(n):
+            if Y[i, j] < 0:
+                adj_matrix[i, j] = Y[i, j]
+    
+    # Absorb negative sign to make weights positive
+    return np.abs(adj_matrix)
+
+
 class HodgeRanking:
     """HodgeRank class for computing rankings based on pairwise comparisons (Sizemore, 2013, p. 81). Naming of variables follows the notation in Sizemore.
     
@@ -30,7 +56,8 @@ class HodgeRanking:
         
         Returns
         -------
-        MutableSequence or NDArray of team names in ascending order of their IDs.
+        MutableSequence or NDArray[np.str_]
+            team names in ascending order of their IDs.
         """
         return self._teams
     
@@ -53,7 +80,8 @@ class HodgeRanking:
         
         Returns
         -------
-        NDArray[np.float64]: Weight / adjacency matrix (n x n)
+        NDArray[np.float64]
+            Weight / adjacency matrix (n x n)
         """
         return self._W
     
@@ -78,7 +106,8 @@ class HodgeRanking:
         
         Returns
         -------
-        NDArray[np.float64]: Pairwise comparison matrix (n x n)
+        NDArray[np.float64]
+            Pairwise comparison matrix (n x n)
         """
         return self._Y
     
@@ -103,12 +132,15 @@ class HodgeRanking:
         
         Parameters
         ----------
-        output_dir (str): Directory to save the ranking CSV file.
-        offset (int): Offset to adjust the baseline score.
+        output_dir : str, optional
+            Directory to save the ranking CSV file. Default is None (no saving).
+        offset : float, optional
+            Offset to adjust the baseline score. Default is 0.0.
 
         Returns
         -------
-        pd.DataFrame: Ranking scores for each team
+        pd.DataFrame
+            Ranking scores for each team
         """
 
         # Laplacian matrix (Sizemore, 2013, p. 56 last definition, also p. 81)
@@ -127,45 +159,71 @@ class HodgeRanking:
         ranking_df = pd.DataFrame(np.concatenate([teams, ranking], axis=1), columns=['team_name', 'score'])
         ranking_df.sort_values(by='score', axis=0, ascending=False, inplace=True)
         if output_dir is not None:
+            os.makedirs(output_dir, exist_ok=True)
             ranking_df.to_csv(os.path.join(output_dir, 'ranking.csv'), index=False)
 
         return ranking_df
     
 
     def decompose(self, output_dir=None) -> tuple[NDArray[np.float64], NDArray[np.float64], float]: 
-        """Decompose the ranking into consistent and inconsistent components. (Sizemore 2013, p. 75)
+        """Decompose the ranking into consistent and inconsistent components (Sizemore 2013, p. 75) as adjacency matrices
 
         Returns
         -------
-        list[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]: List containing, in order, consistent component, inconsistent component, and the cyclic ratio. 
+        tuple[NDArray[np.float64], NDArray[np.float64], float]
+            List containing, in order, consistent component, inconsistent component, and the cyclicity ratio. 
         """
 
-        def grad(s: NDArray[np.float64]) -> NDArray[np.float64]:
-            """Compute the gradient flow of a potential function (vector) s.
+        def grad(s: NDArray[np.float64], W: NDArray[np.float64]) -> NDArray[np.float64]:
+            """Compute the gradient flow of a potential function (vector) s as an adjacency matrix for graphing purposes. Might not be Sizemore's notation.
             
             Parameters
             ----------
             s : NDArray[np.float64]
-                Potential function (n x 1 vector) $V -> \mathbb{R}$ on nodes, where V stands for vertex. 
+                Potential function (n x 1 vector) $V -> \\mathbb{R}$ on nodes, where V stands for vertex. 
+            W : NDArray[np.float64]
+                Weight / adjacency matrix (n x n)
             
             Returns
             -------
-            NDArray[np.float64]: Gradient flow of the ranking vector (n x n)
+            NDArray[np.float64]
+                Gradient flow of the ranking vector (n x n)
             """
             n = s.shape[0]
             grad_matrix = np.zeros((n, n), dtype=np.float64)
             for i in range(n):
-                for j in range(n):
-                    grad_matrix[i, j] = s[j] - s[i]
+                for j in range(i, n):  # remove duplicate edges
+                    if W[i, j] != 0:   # only compute gradient where there is an edge
+                        val = s[j] - s[i]
+                        if val < 0:    # if flow from i to j is negative, reverse direction
+                            grad_matrix[j, i] = abs(val)
+                        else:
+                            grad_matrix[i, j] = s[j] - s[i]
             return grad_matrix
         
-        consistent_comp: NDArray[np.float64] = grad(self.rank()['score'].to_numpy(dtype=np.float64))  # gradient component
-        residual: NDArray[np.float64] = self.Y - consistent_comp  # inconsistent component
-        cyclic_ratio: float = float(np.linalg.norm(residual, ord='fro') /  np.linalg.norm(consistent_comp, ord='fro'))  # cyclic ratio
+        s = self.rank().sort_index()['score'].to_numpy(dtype=np.float64)
+        gradient = grad(s, self.W)  # gradient component
+
+        # inconsistent component
+        residual: NDArray[np.float64] = y2adj(self.Y) - gradient  
+        # to solve the problem of subtractin (adding) arrows in different directions (R_ij and R_ji)
+        n = residual.shape[0]
+        for i in range(n): 
+            for j in range(i, n): 
+                # if both directions have non-zero weights
+                if residual[i, j] != 0 and residual[j, i] != 0:
+                    if residual[i, j] > residual[j, i]:
+                        residual[i, j] -= residual[j, i]  # -= == + (-1) *
+                        residual[j, i] = 0.0
+                    else:
+                        residual[j, i] -= residual[i, j]
+                        residual[i, j] = 0.0
+
+        cyclicity_ratio = float(np.linalg.norm(residual, ord='fro') /  np.linalg.norm(gradient, ord='fro'))  # cyclicity ratio using Frobenius norm
 
         # TODO: Save the components to output_dir if needed
 
-        return consistent_comp, residual, cyclic_ratio
+        return gradient, residual, cyclicity_ratio
     
 
 # # ----------- Binary Comparisons -----------

@@ -5,8 +5,6 @@ __pycache__
 
 # Output files
 out/
-*.pdf
-*.csv
 
 # MacOS files
 .DS_Store
